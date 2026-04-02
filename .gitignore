@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Environment files (sensitive)
+.env
+.env.local
+.env.*.local
+
+# Laravel
+backend/storage/logs/
+backend/storage/framework/cache/
+backend/storage/framework/sessions/
+backend/storage/framework/views/
+backend/bootstrap/cache/
+backend/db.sqlite
+
+# NestJS
+nestjs-backend/dist/
+
+# Next.js
+frontend/.next/
+frontend/out/
+
+# Build output
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
