@@ -6,6 +6,7 @@ import { JwtGuard } from './auth/jwt.guard';
 import { PostsModule } from './posts/posts.module';
 import { UsersModule } from './users/users.module';
 import { BaccaratModule } from './baccarat/baccarat.module';
+import { TranslateModule } from './translate/translate.module.js';
 import { Post } from './posts/post.entity';
 import { User } from './users/user.entity';
 import { SsoUser } from './auth/sso-user.entity';
@@ -27,6 +28,7 @@ import { SsoUser } from './auth/sso-user.entity';
     PostsModule,
     UsersModule,
     BaccaratModule,
+    TranslateModule,
   ],
   providers: [
     {

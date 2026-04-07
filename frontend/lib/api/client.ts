@@ -2,6 +2,8 @@ const LARAVEL_URL =
   process.env.NEXT_PUBLIC_LARAVEL_API_URL || 'http://localhost:8000/api';
 const NESTJS_URL =
   process.env.NEXT_PUBLIC_NESTJS_API_URL || 'http://localhost:8068/api';
+const FASTIFY_URL =
+  process.env.NEXT_PUBLIC_FASTIFY_API_URL || 'http://localhost:3200';
 
 type TokenRefreshedCallback = (accessToken: string, refreshToken: string) => void;
 type UnauthorizedCallback = () => void;
@@ -82,7 +84,7 @@ class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: response.statusText }));
-      throw new Error(error.message || 'An error occurred');
+      throw new Error(error.message || error.error || 'An error occurred');
     }
 
     return response.json();
@@ -110,6 +112,9 @@ export const laravelClient = new ApiClient(LARAVEL_URL);
 
 // NestJS: posts, high-concurrency, real-time features
 export const nestjsClient = new ApiClient(NESTJS_URL);
+
+// Fastify: high-performance services (iching, etc.)
+export const fastifyClient = new ApiClient(FASTIFY_URL);
 
 // Default export kept for backward compatibility
 export const apiClient = laravelClient;

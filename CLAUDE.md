@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Full-stack monorepo with four sub-projects:
+Full-stack monorepo with five sub-projects:
 
 | Directory | Stack | Port | Role |
 |-----------|-------|------|------|
 | `backend/` | Laravel (PHP) | 8000 | Main app: Web pages, Filament admin, business logic |
 | `nestjs-backend/` | NestJS (TypeScript) | 8068 | High-concurrency services, posts API |
+| `fastify-backend/` | Fastify (Node.js) | 3200 | High-performance HTTP services |
 | `frontend/` | Next.js (TypeScript) | 3111 | Primary frontend |
 | `frontend1/` | Vue 3 + Vite | — | Reference frontend |
 
@@ -33,6 +34,12 @@ npm run start:prod  # Start production (node dist/main)
 npm run build       # Compile TypeScript
 npm run test        # Run unit tests
 npm run lint        # Lint and fix
+```
+
+### Fastify (`fastify-backend/`)
+```bash
+npm start        # Start production server
+npm run dev      # Start with hot reload (node --watch)
 ```
 
 ### Next.js frontend (`frontend/`)
@@ -69,6 +76,7 @@ frontend → NestJS  /api/auth/login → Auth Center
 
 - **Laravel**: `JwtAuthMiddleware` using `firebase/php-jwt`, verifies with `config('jwt.secret')`
 - **NestJS**: `JwtGuard` using `@nestjs/jwt`, verifies then looks up `sso_users` table to get local `user_id`
+- **Fastify**: `preHandler` hook using `@fastify/jwt`, whitelist-based — protected by default, public routes explicitly listed in `src/plugins/jwt.js`
 
 ### User Sync (SSO Mapping)
 
@@ -122,6 +130,15 @@ PORT=8068
 ```
 NEXT_PUBLIC_LARAVEL_API_URL=http://localhost:8000/api
 NEXT_PUBLIC_NESTJS_API_URL=http://localhost:8068/api
+NEXT_PUBLIC_FASTIFY_API_URL=http://localhost:3200
+```
+
+**`fastify-backend/.env`**
+```
+PORT=3200
+HOST=0.0.0.0
+JWT_SECRET=...        # Must match Laravel/NestJS JWT_SECRET
+AUTH_CENTER_URL=https://mo.xingke888.com/api
 ```
 
 **`frontend1/.env`**
@@ -132,3 +149,7 @@ VITE_API_BASE_URL=https://api-161-1.xingke888.com/api
 ## NestJS Route Protection
 
 Global `JwtGuard` protects all routes by default. Use `@Public()` decorator to allow unauthenticated access. Currently public: `GET /posts`, `GET /posts/:id`, `POST /auth/login`, `POST /auth/register`, `POST /token/refresh`.
+
+## Fastify Route Protection
+
+Global `preHandler` hook in `src/plugins/jwt.js` protects all routes by default. Public routes are explicitly listed in the `PUBLIC_ROUTES` set — add `'METHOD:/path'` to whitelist a route. Verified JWT payload is available at `request.jwtPayload` (`.sub` = SSO user ID). Currently public: `GET /`, `GET /health`, `GET|POST /iching/predict`, `GET /iching/trigrams`, `GET /iching/hexagrams/*`.
