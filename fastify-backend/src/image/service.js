@@ -5,6 +5,76 @@ const { GoogleGenAI } = require('@google/genai')
 const DEFAULT_MODEL = 'gemini-3.1-flash-image-preview'
 
 /**
+ * OpenAI-compatible endpoint (sk- keys).
+ * Returns image in choices[0].message.audio.data (base64 PNG).
+ */
+async function generateImageOpenAI({ prompt, contents, model, apiKey, baseUrl, objectImages = [], characterImages = [] }) {
+  const base = baseUrl.replace(/\/$/, '')
+  const url = `${base}/v1/chat/completions`
+
+  // Build reference image parts in OpenAI image_url format
+  const refImageParts = [
+    ...objectImages.slice(0, 10),
+    ...characterImages.slice(0, 4),
+  ].map(img => ({
+    type: 'image_url',
+    image_url: { url: `data:${img.mimeType};base64,${img.data}` },
+  }))
+
+  // Convert Gemini contents format → OpenAI messages format
+  let messages
+  if (contents && contents.length > 0) {
+    messages = contents.map((turn, i) => {
+      const isLastUser = turn.role === 'user' && i === contents.map(t => t.role).lastIndexOf('user')
+      const textContent = turn.parts.map(p => p.text || '').join('')
+      if (isLastUser && refImageParts.length > 0) {
+        return {
+          role: 'user',
+          content: [...refImageParts, { type: 'text', text: textContent }],
+        }
+      }
+      return { role: turn.role === 'model' ? 'assistant' : 'user', content: textContent }
+    })
+  } else if (refImageParts.length > 0) {
+    messages = [{ role: 'user', content: [...refImageParts, { type: 'text', text: prompt }] }]
+  } else {
+    messages = [{ role: 'user', content: prompt }]
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model, messages }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`OpenAI API error ${res.status}: ${text.slice(0, 200)}`)
+  }
+
+  const data = await res.json()
+  const msg = data?.choices?.[0]?.message
+
+  // Image returned in audio.data field
+  if (msg?.audio?.data) {
+    return { mimeType: 'image/png', data: msg.audio.data, caption: null, model }
+  }
+
+  // Fallback: markdown image in content
+  const text = msg?.content || ''
+  const match = text.match(/!\[image\]\(data:([^;]+);base64,([^)]+)\)/)
+  if (match) {
+    return { mimeType: match[1], data: match[2], caption: null, model }
+  }
+
+  const errText = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+  throw new Error(errText.slice(0, 300) || 'No image returned from OpenAI-compatible API')
+}
+
+/**
  * Generate an image via Gemini.
  *
  * Pass either:
@@ -25,12 +95,23 @@ async function generateImage({
   temperature,
   topP,
   enableSearch = false,
+  apiKey: reqApiKey,    // 用户自定义 API Key（优先于环境变量）
+  baseUrl: reqBaseUrl,  // 用户自定义 Base URL（优先于环境变量）
 }) {
   const MODEL = model || DEFAULT_MODEL
-  const apiKey = process.env.GEMINI_API_KEY
+  const apiKey = (reqApiKey && reqApiKey.trim()) || process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured')
 
-  const baseUrl = process.env.GEMINI_BASE_URL
+  const baseUrl = (reqBaseUrl && reqBaseUrl.trim()) || process.env.GEMINI_BASE_URL
+
+  // 用户手动提供 sk- key → OpenAI-compatible proxy
+  const userProvidedKey = !!(reqApiKey && reqApiKey.trim())
+  if (userProvidedKey && apiKey.startsWith('sk-')) {
+    if (!baseUrl) throw new Error('Base URL is required for sk- API keys')
+    return generateImageOpenAI({ prompt, contents: contentsOverride, model: MODEL, apiKey, baseUrl, objectImages, characterImages })
+  }
+
+  // Google GenAI SDK path
   const ai = new GoogleGenAI({
     apiKey,
     ...(baseUrl ? { httpOptions: { baseUrl } } : {}),
@@ -56,20 +137,14 @@ async function generateImage({
   }
 
   // Build reference image inline parts to inject into the LAST user turn.
-  // They are always injected into the last user turn (the current request),
-  // not the first, so that multi-turn requests stay small and ref images
-  // are always visible to the model for the current generation step.
   const refInlineParts = [
     ...objectImages.slice(0, 10).map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
     ...characterImages.slice(0, 4).map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
   ]
 
-  // Build contents: use caller-supplied history or single-turn from prompt.
-  // Inject reference images into the LAST user turn's parts.
   let contents
   if (contentsOverride && contentsOverride.length > 0) {
     if (refInlineParts.length > 0) {
-      // Find the last user turn and prepend ref images to its parts
       const lastUserIdx = [...contentsOverride].map(t => t.role).lastIndexOf('user')
       contents = contentsOverride.map((turn, i) => {
         if (i === lastUserIdx && turn.role === 'user') {
@@ -91,7 +166,6 @@ async function generateImage({
   let textAccum = ''
 
   for await (const chunk of response) {
-    // Skip chunks that have no candidates/content/parts
     if (!chunk.candidates || !chunk.candidates[0].content || !chunk.candidates[0].content.parts) {
       continue
     }
@@ -100,7 +174,6 @@ async function generateImage({
 
     for (const part of parts) {
       if (part.inlineData?.data) {
-        // Direct inlineData (standard Gemini response)
         imageMimeType = part.inlineData.mimeType || 'image/png'
         imageData = part.inlineData.data
       } else if (part.text) {
@@ -110,7 +183,6 @@ async function generateImage({
   }
 
   // The proxy embeds images in text as markdown: ![image](data:mimeType;base64,...)
-  // when thinkingBudget=0 and inlineData is not returned directly.
   if (!imageData && textAccum) {
     const match = textAccum.match(/!\[image\]\(data:([^;]+);base64,([^)]+)\)/)
     if (match) {
@@ -120,7 +192,6 @@ async function generateImage({
   }
 
   if (!imageData) {
-    // No image found — clean up any text/thinking for error message
     const cleanText = textAccum
       ? textAccum.replace(/!\[image\]\([^)]+\)/g, '').replace(/\*\*(.*?)\*\*/g, '$1').replace(/\n{3,}/g, '\n\n').trim()
       : 'No image returned from Gemini'

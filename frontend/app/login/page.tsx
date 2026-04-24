@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
@@ -19,14 +19,30 @@ export default function LoginPage() {
   );
 }
 
+function isWechatBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /MicroMessenger/i.test(navigator.userAgent);
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
-  const [identifier, setIdentifier] = useState('');
+  const [login_field, setLoginField] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // 微信内置浏览器自动跳转公众号网页授权
+  useEffect(() => {
+    if (isWechatBrowser()) {
+      const redirectUri = encodeURIComponent(
+        `${window.location.origin}/oauth/callback`
+      );
+      window.location.href =
+        'https://mo.xingke888.com/api/oauth/wechat-mp?redirect_uri=' + redirectUri;
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +50,7 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      await login({ identifier, password });
+      await login({ login: login_field, password });
       const redirect = searchParams.get('redirect');
       router.push(redirect || '/');
     } catch (err) {
@@ -52,8 +68,10 @@ function LoginForm() {
     const redirectUri = encodeURIComponent(
       `${window.location.origin}/oauth/callback`
     );
+    // 微信内置浏览器用公众号授权，否则用开放平台扫码
+    const endpoint = isWechatBrowser() ? 'wechat-mp' : 'wechat';
     window.location.href =
-      'https://mo.xingke888.com/api/oauth/wechat?redirect_uri=' + redirectUri;
+      `https://mo.xingke888.com/api/oauth/${endpoint}?redirect_uri=` + redirectUri;
   }
 
   return (
@@ -80,8 +98,8 @@ function LoginForm() {
                 id="identifier"
                 type="text"
                 placeholder="用户名或邮箱"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
+                value={login_field}
+                onChange={(e) => setLoginField(e.target.value)}
                 required
               />
             </div>

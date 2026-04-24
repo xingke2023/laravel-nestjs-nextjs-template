@@ -1,11 +1,14 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fastifyClient } from '@/lib/api/client';
+import { useAuth } from '@/lib/auth-context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { ThemeColorPicker } from '@/components/theme-color-picker';
 
 interface RefImage {
   mimeType: string;
@@ -20,6 +23,16 @@ interface ImageResult {
   caption: string | null;
   prompt: string;
   model: string;
+}
+
+interface HistoryItem {
+  id: number;
+  type: string;
+  prompt: string;
+  model: string | null;
+  mime_type: string;
+  caption: string | null;
+  created_at: string;
 }
 
 const MODEL = 'gemini-3.1-flash-image-preview'
@@ -79,14 +92,14 @@ function ChipGroup({ label, options, value, onChange }: {
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs text-muted-foreground uppercase tracking-wide">{label}</Label>
+      <Label className="text-base text-muted-foreground uppercase tracking-wide">{label}</Label>
       <div className="flex flex-wrap gap-1.5">
         {options.map(o => (
           <button key={o.value} type="button" onClick={() => onChange(o.value)}
-            className={`rounded-md border px-2.5 py-1 text-xs transition ${
+            className={`rounded-md border px-2.5 py-1 text-base transition ${
               value === o.value
-                ? 'border-violet-500 bg-violet-500 text-white'
-                : 'border-border bg-background text-muted-foreground hover:border-violet-400 hover:text-violet-600 dark:hover:text-violet-300'
+                ? 'border-blue-500 bg-blue-500 text-white'
+                : 'border-border bg-background text-muted-foreground hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300'
             }`}>
             {o.label}
           </button>
@@ -103,13 +116,13 @@ function SliderParam({ label, min, max, step, value, onChange, fmt, hints }: {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <Label className="text-xs text-muted-foreground uppercase tracking-wide">{label}</Label>
-        <span className="font-mono text-xs font-medium text-violet-600 dark:text-violet-400">{fmt(value)}</span>
+        <Label className="text-base text-muted-foreground uppercase tracking-wide">{label}</Label>
+        <span className="font-mono text-base font-medium text-blue-600 dark:text-blue-400">{fmt(value)}</span>
       </div>
       <input type="range" min={min} max={max} step={step} value={value}
         onChange={e => onChange(parseFloat(e.target.value))}
-        className="w-full accent-violet-500 h-1.5" />
-      <div className="flex justify-between text-[10px] text-muted-foreground">
+        className="w-full accent-blue-500 h-1.5" />
+      <div className="flex justify-between text-base text-muted-foreground">
         {hints.map((h, i) => <span key={i}>{h}</span>)}
       </div>
     </div>
@@ -119,10 +132,10 @@ function SliderParam({ label, min, max, step, value, onChange, fmt, hints }: {
 function Toggle({ enabled, onToggle, label }: { enabled: boolean; onToggle: () => void; label: string }) {
   return (
     <div className="flex items-center gap-2.5 cursor-pointer" onClick={onToggle}>
-      <div className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${enabled ? 'bg-violet-500' : 'bg-gray-300 dark:bg-stone-600'}`}>
+      <div className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${enabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-stone-600'}`}>
         <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
       </div>
-      <Label className="cursor-pointer text-xs">{label}</Label>
+      <Label className="cursor-pointer text-base">{label}</Label>
     </div>
   )
 }
@@ -141,16 +154,16 @@ function ImageUploadGrid({ images, maxCount, onAdd, onRemove, inputRef }: {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={img.previewUrl} alt={img.name} className="h-full w-full object-cover" />
           <button type="button" onClick={() => onRemove(idx)}
-            className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-white text-[10px] hover:bg-black">
+            className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-white text-base hover:bg-black">
             ×
           </button>
         </div>
       ))}
       {images.length < maxCount && (
         <button type="button" onClick={() => inputRef.current?.click()}
-          className="flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-violet-300 text-violet-400 transition hover:border-violet-500 hover:text-violet-600 dark:border-stone-600 dark:text-stone-500">
+          className="flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-blue-300 text-blue-400 transition hover:border-blue-500 hover:text-blue-600 dark:border-stone-600 dark:text-stone-500">
           <span className="text-lg leading-none">+</span>
-          <span className="text-[10px]">添加</span>
+          <span className="text-base">添加</span>
         </button>
       )}
       <input ref={inputRef} type="file" accept="image/*" multiple className="hidden"
@@ -160,6 +173,7 @@ function ImageUploadGrid({ images, maxCount, onAdd, onRemove, inputRef }: {
 }
 
 export default function ImagePage() {
+  const { user, isAuthenticated, logout } = useAuth();
   const [prompt, setPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState('');
   const [imageSize, setImageSize] = useState('1K');
@@ -167,13 +181,37 @@ export default function ImagePage() {
   const [temperature, setTemperature] = useState(1.0);
   const [topP, setTopP] = useState(0.95);
   const [enableSearch, setEnableSearch] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('https://tokens.fidelityai.net/');
   const [objectImages, setObjectImages] = useState<RefImage[]>([]);
   const [characterImages, setCharacterImages] = useState<RefImage[]>([]);
   const [result, setResult] = useState<ImageResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const objectInputRef = useRef<HTMLInputElement>(null);
   const characterInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+    setHistoryLoading(true);
+    fastifyClient.get<{ success: boolean; data: HistoryItem[] }>('/image/history')
+      .then(res => setHistory(res.data))
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
+  }, []);
+
+  async function loadHistoryItem(item: HistoryItem) {
+    try {
+      const res = await fastifyClient.get<{ success: boolean; data: { image_data: string; mime_type: string; prompt: string; model: string; caption: string } }>(`/image/history/${item.id}`);
+      const d = res.data;
+      setResult({ mimeType: d.mime_type, image: d.image_data, caption: d.caption, prompt: d.prompt, model: d.model || '' });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {}
+  }
 
   async function addImages(files: File[], current: RefImage[], max: number, setter: React.Dispatch<React.SetStateAction<RefImage[]>>) {
     const newImgs: RefImage[] = await Promise.all(
@@ -195,12 +233,19 @@ export default function ImagePage() {
     setError(''); setResult(null); setLoading(true)
     try {
       const res = await fastifyClient.post<{ success: boolean; data: ImageResult }>('/image/generate', {
-        prompt: prompt.trim(), model: MODEL,
+        prompt: prompt.trim(), model: MODEL, historyType: 'image',
         aspectRatio, imageSize, thinkingLevel, temperature, topP, enableSearch,
         objectImages: objectImages.map(({ mimeType, data }) => ({ mimeType, data })),
         characterImages: characterImages.map(({ mimeType, data }) => ({ mimeType, data })),
+        ...(baseUrl.trim() ? { baseUrl: baseUrl.trim(), ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) } : {}),
       })
-      setResult(res.data)
+      setResult(res.data);
+      // 刷新历史记录
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        fastifyClient.get<{ success: boolean; data: HistoryItem[] }>('/image/history')
+          .then(r => setHistory(r.data)).catch(() => {});
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成失败，请重试')
     } finally {
@@ -217,7 +262,7 @@ export default function ImagePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-purple-50 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
 
       {/* 顶部标题栏 */}
       <header className="border-b bg-white/80 backdrop-blur dark:bg-stone-900/80">
@@ -225,14 +270,44 @@ export default function ImagePage() {
           <div className="flex items-center gap-3">
             <span className="text-2xl">🎨</span>
             <div>
-              <h1 className="text-base font-bold leading-tight">Gemini最新版Nano Banana 2作图工具</h1>
-              <p className="text-[11px] text-muted-foreground">{MODEL}</p>
+              <h1 className="text-2xl font-light leading-tight">Gemini最新版Nano Banana 2作图工具</h1>
+              <p className="text-base text-muted-foreground">{MODEL}</p>
             </div>
           </div>
-          <a href="/image-chat"
-            className="rounded-full border border-violet-200 bg-white px-3 py-1 text-xs text-violet-600 hover:bg-violet-50 dark:border-stone-600 dark:bg-stone-800 dark:text-violet-300 transition">
-            对话模式
-          </a>
+          <div className="flex items-center gap-2">
+            <a href="/video"
+              className="rounded-full border border-blue-200 bg-white px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 dark:border-stone-600 dark:bg-stone-800 dark:text-blue-300 transition">
+              Seedance 2.0 视频制作工具
+            </a>
+            <a href="/image-chat"
+              className="rounded-full border border-blue-200 bg-white px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 dark:border-stone-600 dark:bg-stone-800 dark:text-blue-300 transition">
+              对话模式
+            </a>
+            <ThemeColorPicker />
+            <ThemeToggle />
+            {isAuthenticated && user ? (
+              <div className="flex items-center gap-2 pl-2 border-l border-border">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-semibold text-white">
+                  {(user.name || user.email || '?')[0].toUpperCase()}
+                </div>
+                <span className="hidden sm:block text-sm text-foreground max-w-[100px] truncate">
+                  {user.name || user.email}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { logout(); window.location.href = '/login'; }}
+                  className="text-xs text-muted-foreground hover:text-destructive transition"
+                >
+                  退出
+                </button>
+              </div>
+            ) : (
+              <a href="/login"
+                className="rounded-full bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 transition">
+                登录
+              </a>
+            )}
+          </div>
         </div>
       </header>
 
@@ -246,20 +321,20 @@ export default function ImagePage() {
             <form onSubmit={handleGenerate} className="space-y-4">
 
               {/* 参考图 */}
-              <Card className="border-violet-100 dark:border-stone-700">
+              <Card className="border-blue-100 dark:border-stone-700">
                 <CardHeader className="pb-3 pt-4">
-                  <CardTitle className="text-sm font-semibold">参考图</CardTitle>
-                  <p className="text-xs text-muted-foreground">对象保真最多 10 张 · 角色一致性最多 4 张</p>
+                  <CardTitle className="text-base font-semibold">参考图</CardTitle>
+                  <p className="text-base text-muted-foreground">对象保真最多 10 张 · 角色一致性最多 4 张</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {/* 对象保真 */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium">🖼 对象保真参考图</p>
-                        <p className="text-xs text-muted-foreground">产品、物品、场景，保持外观一致</p>
+                        <p className="text-base font-medium">🖼 对象保真参考图</p>
+                        <p className="text-base text-muted-foreground">产品、物品、场景，保持外观一致</p>
                       </div>
-                      <span className="text-xs text-muted-foreground tabular-nums">{objectImages.length}/10</span>
+                      <span className="text-base text-muted-foreground tabular-nums">{objectImages.length}/10</span>
                     </div>
                     <ImageUploadGrid images={objectImages} maxCount={10}
                       onAdd={f => addImages(f, objectImages, 10, setObjectImages)}
@@ -270,10 +345,10 @@ export default function ImagePage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium">👤 角色一致性参考图</p>
-                        <p className="text-xs text-muted-foreground">人物、角色，保持面貌服装风格一致</p>
+                        <p className="text-base font-medium">👤 角色一致性参考图</p>
+                        <p className="text-base text-muted-foreground">人物、角色，保持面貌服装风格一致</p>
                       </div>
-                      <span className="text-xs text-muted-foreground tabular-nums">{characterImages.length}/4</span>
+                      <span className="text-base text-muted-foreground tabular-nums">{characterImages.length}/4</span>
                     </div>
                     <ImageUploadGrid images={characterImages} maxCount={4}
                       onAdd={f => addImages(f, characterImages, 4, setCharacterImages)}
@@ -284,16 +359,16 @@ export default function ImagePage() {
               </Card>
 
               {/* 提示词 */}
-              <Card className="border-violet-100 dark:border-stone-700">
+              <Card className="border-blue-100 dark:border-stone-700">
                 <CardContent className="pt-4 space-y-3">
-                  <Label htmlFor="prompt" className="text-sm font-semibold">提示词（Prompt）</Label>
+                  <Label htmlFor="prompt" className="text-base font-semibold">提示词（Prompt）</Label>
                   <Textarea id="prompt" rows={5} required className="resize-none"
                     placeholder="描述你想生成的图片，例如：一只在草地上奔跑的金毛犬，阳光明媚，写实风格"
                     value={prompt} onChange={e => setPrompt(e.target.value)} />
                   <div className="flex flex-wrap gap-1.5">
                     {EXAMPLE_PROMPTS.map(p => (
                       <button key={p} type="button" onClick={() => setPrompt(p)}
-                        className="rounded-full border border-violet-200 bg-white px-2.5 py-0.5 text-xs text-violet-700 hover:bg-violet-50 dark:border-stone-600 dark:bg-stone-800 dark:text-violet-300 dark:hover:bg-stone-700">
+                        className="rounded-full border border-blue-200 bg-white px-2.5 py-0.5 text-base text-blue-700 hover:bg-blue-50 dark:border-stone-600 dark:bg-stone-800 dark:text-blue-300 dark:hover:bg-stone-700">
                         {p.length > 20 ? p.slice(0, 20) + '…' : p}
                       </button>
                     ))}
@@ -301,9 +376,9 @@ export default function ImagePage() {
                 </CardContent>
               </Card>
 
-              {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+              {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-base text-destructive">{error}</p>}
 
-              <Button type="submit" size="lg" className="w-full bg-violet-600 hover:bg-violet-700 text-base" disabled={loading || !prompt.trim()}>
+              <Button type="submit" size="lg" className="w-full bg-blue-600 hover:bg-blue-700 text-base" disabled={loading || !prompt.trim()}>
                 {loading ? (
                   <span className="flex items-center gap-2">
                     <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -318,56 +393,84 @@ export default function ImagePage() {
 
             {/* 生成结果 */}
             {result && (
-              <Card className="border-violet-100 dark:border-stone-700">
+              <Card className="border-blue-100 dark:border-stone-700">
                 <CardHeader className="pb-2 pt-4">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-semibold">生成结果</CardTitle>
-                    <Button size="sm" variant="outline" onClick={handleDownload} className="h-7 text-xs">↓ 下载</Button>
+                    <CardTitle className="text-base font-semibold">生成结果</CardTitle>
+                    <Button size="sm" variant="outline" onClick={handleDownload} className="h-7 text-base">↓ 下载</Button>
                   </div>
-                  <p className="text-[11px] text-muted-foreground line-clamp-1">{result.prompt}</p>
-                  <p className="text-[11px] text-violet-500">{result.model}</p>
+                  <p className="text-base text-muted-foreground line-clamp-1">{result.prompt}</p>
+                  <p className="text-base text-blue-500">{result.model}</p>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={`data:${result.mimeType};base64,${result.image}`} alt={result.prompt}
                     className="w-full rounded-lg object-contain shadow-sm" />
                   {result.caption && (
-                    <p className="rounded-md bg-violet-50 p-3 text-sm text-violet-800 dark:bg-stone-700/50 dark:text-violet-200">{result.caption}</p>
+                    <p className="rounded-md bg-blue-50 p-3 text-base text-blue-800 dark:bg-stone-700/50 dark:text-blue-200">{result.caption}</p>
                   )}
                 </CardContent>
               </Card>
             )}
 
+            {/* 历史记录 */}
+            {history.length > 0 && (
+              <Card className="border-blue-100 dark:border-stone-700">
+                <CardHeader className="pb-2 pt-4 cursor-pointer select-none" onClick={() => setHistoryOpen(v => !v)}>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-semibold">🕒 历史记录（{history.length}）</CardTitle>
+                    <span className="text-muted-foreground text-sm">{historyOpen ? '▲' : '▼'}</span>
+                  </div>
+                </CardHeader>
+                {historyOpen && (
+                  <CardContent>
+                    <div className="space-y-2">
+                      {history.map(item => (
+                        <button key={item.id} type="button" onClick={() => loadHistoryItem(item)}
+                          className="w-full text-left rounded-lg border border-border px-3 py-2 hover:bg-blue-50 dark:hover:bg-stone-700/50 transition">
+                          <p className="text-sm font-medium line-clamp-1">{item.prompt}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{item.model} · {new Date(item.created_at).toLocaleString('zh-CN')}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            )}
+            {historyLoading && (
+              <p className="text-sm text-muted-foreground text-center py-2">加载历史记录…</p>
+            )}
+
             {/* 场景说明表 */}
-            <Card className="border-violet-100 bg-violet-50/40 dark:border-stone-700 dark:bg-stone-800/30">
+            <Card className="border-blue-100 bg-blue-50/40 dark:border-stone-700 dark:bg-stone-800/30">
               <CardHeader className="pb-2 pt-4">
-                <CardTitle className="text-sm font-semibold">📚 参考图场景配额策略</CardTitle>
-                <p className="text-xs text-muted-foreground">每次请求最多 14 张参考图</p>
+                <CardTitle className="text-base font-semibold">📚 参考图场景配额策略</CardTitle>
+                <p className="text-base text-muted-foreground">每次请求最多 14 张参考图</p>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
+                  <table className="w-full text-base">
                     <thead>
-                      <tr className="border-b border-violet-200 dark:border-stone-600">
+                      <tr className="border-b border-blue-200 dark:border-stone-600">
                         {['场景', '模型', '对象', '角色', '合计', '说明'].map(h => (
-                          <th key={h} className="py-2 pr-3 text-left font-semibold text-violet-700 dark:text-violet-300 whitespace-nowrap">{h}</th>
+                          <th key={h} className="py-2 pr-3 text-left font-semibold text-blue-700 dark:text-blue-300 whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-violet-100 dark:divide-stone-700">
+                    <tbody className="divide-y divide-blue-100 dark:divide-stone-700">
                       {SCENARIO_TABLE.map(row => (
-                        <tr key={row.scene} className="hover:bg-violet-50/60 dark:hover:bg-stone-700/30">
+                        <tr key={row.scene} className="hover:bg-blue-50/60 dark:hover:bg-stone-700/30">
                           <td className="py-1.5 pr-3 font-medium whitespace-nowrap">{row.scene}</td>
                           <td className="py-1.5 pr-3">
-                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            <span className={`rounded px-1.5 py-0.5 text-base font-medium ${
                               row.model === 'Pro'
-                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
                                 : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
                             }`}>{row.model}</span>
                           </td>
                           <td className="py-1.5 pr-3 text-muted-foreground">{row.obj}</td>
                           <td className="py-1.5 pr-3 text-muted-foreground">{row.role}</td>
-                          <td className="py-1.5 pr-3 font-semibold text-violet-600 dark:text-violet-400">{row.total}</td>
+                          <td className="py-1.5 pr-3 font-semibold text-blue-600 dark:text-blue-400">{row.total}</td>
                           <td className="py-1.5 text-muted-foreground">{row.desc}</td>
                         </tr>
                       ))}
@@ -380,13 +483,38 @@ export default function ImagePage() {
           </div>
 
           {/* ── 右侧参数面板 ── */}
-          <aside className="w-full lg:w-72 xl:w-80 shrink-0">
+          <aside className="w-full lg:w-72 xl:w-80 shrink-0 order-first lg:order-last">
             <div className="lg:sticky lg:top-6 space-y-3">
-              <Card className="border-violet-100 dark:border-stone-700">
+              <Card className="border-blue-100 dark:border-stone-700">
                 <CardHeader className="pb-3 pt-4">
-                  <CardTitle className="text-sm font-semibold">参数设置</CardTitle>
+                  <CardTitle className="text-base font-semibold">参数设置</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-5">
+
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-base text-muted-foreground uppercase tracking-wide">Base URL</Label>
+                      <input
+                        type="text"
+                        value={baseUrl}
+                        onChange={e => setBaseUrl(e.target.value)}
+                        placeholder="留空使用服务器默认"
+                        className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-base outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 dark:focus:border-blue-500 dark:focus:ring-blue-900"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-base text-muted-foreground uppercase tracking-wide">API Key</Label>
+                      <input
+                        type="password"
+                        value={apiKey}
+                        onChange={e => setApiKey(e.target.value)}
+                        placeholder="留空使用服务器默认"
+                        className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-base outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 dark:focus:border-blue-500 dark:focus:ring-blue-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="h-px bg-border" />
 
                   <ChipGroup label="宽高比 Aspect Ratio" options={ASPECT_RATIOS} value={aspectRatio} onChange={setAspectRatio} />
                   <ChipGroup label="分辨率 Image Size" options={IMAGE_SIZES} value={imageSize} onChange={setImageSize} />

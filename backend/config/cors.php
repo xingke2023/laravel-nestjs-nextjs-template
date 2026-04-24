@@ -24,6 +24,8 @@ return [
         'http://localhost:3000',
         'http://demo1.xingke888.com',
         'https://demo1.xingke888.com',
+        'https://xingke888.com',
+        'https://www.xingke888.com',
         env('FRONTEND_URL', ''),
     ],
 

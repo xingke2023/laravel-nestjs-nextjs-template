@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Laravel + Next.js App",
+  title: "会员专用",
   description: "Full-stack app with Laravel API and Next.js frontend",
 };
 

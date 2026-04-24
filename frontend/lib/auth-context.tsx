@@ -22,6 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
   function setTokens(data: { accessToken: string; refreshToken: string; user?: User }) {
     setAccessToken(data.accessToken);
@@ -40,6 +41,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    setMounted(true);
+
     configureClient({
       onTokenRefreshed: (at, rt) => {
         setAccessToken(at);
@@ -54,11 +57,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const storedToken = localStorage.getItem('accessToken');
     const storedUser = localStorage.getItem('user');
-    if (storedToken && storedUser) {
+
+    if (storedToken) {
       setAccessToken(storedToken);
-      setUser(JSON.parse(storedUser));
+      if (storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch {
+          localStorage.removeItem('user');
+        }
+        setLoading(false);
+      } else {
+        // token 存在但 user 缺失（如微信登录后刷新），重新拉取
+        authApi.me()
+          .then((res) => {
+            setUser(res.user);
+            localStorage.setItem('user', JSON.stringify(res.user));
+          })
+          .catch(() => {
+            clear();
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+      }
+    } else {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const login = async (credentials: LoginCredentials) => {
@@ -78,6 +103,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     clear();
   };
+
+  // SSR/hydration 阶段保持 loading=true、isAuthenticated=false，避免 hydration mismatch
+  if (!mounted) {
+    return (
+      <AuthContext.Provider
+        value={{
+          user: null,
+          accessToken: null,
+          loading: true,
+          login,
+          register,
+          logout,
+          setTokens,
+          isAuthenticated: false,
+        }}
+      >
+        {children}
+      </AuthContext.Provider>
+    );
+  }
 
   return (
     <AuthContext.Provider

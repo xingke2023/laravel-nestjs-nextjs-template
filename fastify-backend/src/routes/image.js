@@ -1,6 +1,7 @@
 'use strict'
 
 const { generateImage } = require('../image/service')
+const { saveImageGeneration, getImageHistory, getImageGenerationById } = require('../history/service')
 
 const imgArraySchema = (maxItems) => ({
   type: 'array',
@@ -16,6 +17,7 @@ const imgArraySchema = (maxItems) => ({
 })
 
 async function imageRoutes(fastify) {
+  // ─── POST /image/generate ─────────────────────────────────────────────────
   fastify.post('/generate', {
     schema: {
       body: {
@@ -34,6 +36,9 @@ async function imageRoutes(fastify) {
           enableSearch:    { type: 'boolean' },
           objectImages:    imgArraySchema(10),  // 对象保真参考图
           characterImages: imgArraySchema(4),   // 角色一致性参考图
+          apiKey:          { type: 'string' },  // 用户自定义 API Key
+          baseUrl:         { type: 'string' },  // 用户自定义 Base URL
+          historyType:     { type: 'string' },  // 'image' | 'image_chat'
         },
       },
     },
@@ -42,7 +47,10 @@ async function imageRoutes(fastify) {
       prompt, contents, model,
       objectImages = [], characterImages = [],
       aspectRatio, imageSize, thinkingLevel, temperature, topP, enableSearch,
+      apiKey, baseUrl, historyType,
     } = request.body
+
+    fastify.log.info({ prompt, model, aspectRatio, imageSize, thinkingLevel, temperature, topP, enableSearch, apiKey: apiKey ? '***' : undefined, baseUrl }, 'image generate params')
 
     // Require at least prompt or contents
     if (!prompt && (!contents || contents.length === 0)) {
@@ -54,7 +62,24 @@ async function imageRoutes(fastify) {
         prompt, contents, model,
         objectImages, characterImages,
         aspectRatio, imageSize, thinkingLevel, temperature, topP, enableSearch,
+        apiKey, baseUrl,
       })
+
+      // 异步保存历史（不阻塞响应）
+      const userId = request.jwtPayload?.userId ?? request.jwtPayload?.sub
+      if (userId && result.data) {
+        const type = historyType === 'image_chat' ? 'image_chat' : 'image'
+        saveImageGeneration(fastify.db, {
+          userId,
+          type,
+          prompt: prompt || '',
+          model: result.model,
+          imageData: result.data,
+          mimeType: result.mimeType,
+          caption: result.caption,
+        }).catch(err => fastify.log.warn({ err }, 'save image history failed'))
+      }
+
       return {
         success: true,
         data: {
@@ -69,6 +94,24 @@ async function imageRoutes(fastify) {
       fastify.log.error(err)
       return reply.code(500).send({ success: false, error: err.message })
     }
+  })
+
+  // ─── GET /image/history ───────────────────────────────────────────────────
+  fastify.get('/history', async (request, reply) => {
+    const userId = request.jwtPayload?.userId ?? request.jwtPayload?.sub
+    if (!userId) return { success: true, data: [] }
+    const { type } = request.query
+    const rows = await getImageHistory(fastify.db, userId, type || null)
+    return { success: true, data: rows }
+  })
+
+  // ─── GET /image/history/:id ────────────────────────────────────────────────
+  fastify.get('/history/:id', async (request, reply) => {
+    const userId = request.jwtPayload?.userId ?? request.jwtPayload?.sub
+    if (!userId) return reply.code(403).send({ success: false, error: 'Unauthorized' })
+    const row = await getImageGenerationById(fastify.db, request.params.id, userId)
+    if (!row) return reply.code(404).send({ success: false, error: 'Not found' })
+    return { success: true, data: row }
   })
 }
 

@@ -16,13 +16,17 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'identifier' => 'required|string',
-            'password'   => 'required|string',
+            'password' => 'required|string',
         ]);
+
+        $identifier = $request->input('identifier') ?? $request->input('login');
+        if (empty($identifier)) {
+            return response()->json(['message' => 'The identifier field is required.'], 422);
+        }
 
         try {
             $result = $this->authCenter->login(
-                $request->identifier,
+                $identifier,
                 $request->password
             );
         } catch (\RuntimeException $e) {

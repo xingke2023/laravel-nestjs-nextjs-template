@@ -29,7 +29,7 @@ export interface AuthResponse {
 }
 
 export interface LoginCredentials {
-  identifier: string;
+  login: string;
   password: string;
 }
 

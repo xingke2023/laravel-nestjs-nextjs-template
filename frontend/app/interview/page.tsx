@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Script from 'next/script';
 import { useAuth } from '@/lib/auth-context';
-import { nestjsClient } from '@/lib/api/client';
+import { fastifyClient } from '@/lib/api/client';
 
 declare global {
   interface Window {
@@ -130,7 +130,7 @@ function InterviewTool() {
 
     let key: string, region: string;
     try {
-      const data = await nestjsClient.get<SpeechKeyResponse>('/speech-key');
+      const data = await fastifyClient.get<SpeechKeyResponse>('/translate/speech-key');
       key = data.key;
       region = data.region;
     } catch (e) {
@@ -194,7 +194,7 @@ function InterviewTool() {
     setAiLoading(true);
     setAiAnswer('');
     try {
-      const data = await nestjsClient.post<GeminiResponse>('/gemini', { text: lastThree });
+      const data = await fastifyClient.post<GeminiResponse>('/translate/gemini', { text: lastThree });
       setAiAnswer(data.answer || 'No response');
     } catch (e) {
       setAiAnswer('Request failed: ' + (e instanceof Error ? e.message : e));
